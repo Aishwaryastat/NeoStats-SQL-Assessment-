@@ -1,0 +1,161 @@
+
+-- Crate DataBase
+CREATE DATABASE assignment;
+\c assignment;
+
+-- Create Tables
+
+CREATE TABLE tab1 (
+ Cust_ID int,
+ ContactDate DATE,
+ ContactType VARCHAR(5)
+ );
+
+ CREATE TABLE tab2 (
+ Cust_ID int,
+ OrderNum BIGINT,
+ OrderDate DATE,
+ Value float,
+ Gift varchar(5),
+ RecipNum BIGINT
+ );
+
+CREATE TABLE tab3 (
+ Cust_ID int,
+ OrderNum BIGINT,
+ OrderDate DATE,
+ OrderMethod varchar(5),
+ PaymentType varchar(5)
+ );
+
+ CREATE TABLE tab4(
+ Cust_ID int,
+ area_code int,
+ FirstYYMM date,
+ FirstChannel varchar(5),
+ FirstDollar int,
+ StoreDist float,
+ Email varchar(5),
+ Age int
+ );
+
+
+-- Upload data using \COPY command.
+\COPY tab1 FROM 'C:\Users\ABC\Desktop\SQL_test\tab1.csv' DELIMITER ',' CSV HEADER;
+
+\COPY tab2 FROM 'C:\Users\ABC\Desktop\SQL_test\tab2.csv' DELIMITER ',' CSV HEADER;
+
+\COPY tab3 FROM 'C:\Users\ABC\Desktop\SQL_test\tab3.csv' DELIMITER ',' CSV HEADER;
+
+\COPY tab4 FROM 'C:\Users\ABC\Desktop\SQL_test\tab4.csv' DELIMITER ',' CSV HEADER;
+
+-- Check if the tables are created correct,
+select * from tab1 limit 5;
+
+
+-- a. Find Top customers by total spend in the year 2005 and 2006.
+CREATE or REPLACE FUNCTION top_customer_by_total_spend(
+	years INTEGER[],
+	top_limit INTEGER
+)
+RETURNS TABLE(
+	CUST_ID INT,
+	TOTAL_SPEND NUMERIC
+)
+AS $$
+BEGIN 
+	RETURN QUERY
+		EXECUTE '
+		SELECT 
+			T2.CUST_ID, ROUND(SUM(T2.VALUE)::NUMERIC,2) AS TOTAL_SPEND
+		FROM 
+			TAB2 T2
+		WHERE 
+			EXTRACT(YEAR FROM T2.ORDERDATE) = ANY($1)
+		GROUP BY 
+			T2.CUST_ID
+		ORDER BY 
+			TOTAL_SPEND DESC
+		LIMIT $2'
+	USING YEARS, TOP_LIMIT;
+END;
+$$
+LANGUAGE PLPGSQL;
+
+--  Execute store procedure
+
+SELECT * FROM TOP_CUSTOMER_BY_TOTAL_SPEND(ARRAY[2005,2006],10);
+
+
+-- b. Find the total number of orders and average order value by area code and year.
+
+
+SELECT 
+	T4.AREA_CODE,
+	EXTRACT(YEAR FROM T2.ORDERDATE) AS YEAR,
+        COUNT(T2.ORDERNUM) AS TOTAL_ORDER,
+        ROUND(AVG(T2.VALUE)::NUMERIC, 2) AS AVERAGE_VALUE 
+FROM 
+        TAB2 T2
+JOIN 
+        TAB3 T3 ON T2.CUST_ID = T3.CUST_ID
+JOIN 
+        TAB4 T4 ON T2.CUST_ID = T4.CUST_ID
+GROUP BY 
+        T4.AREA_CODE,
+        EXTRACT(YEAR FROM T2.ORDERDATE)
+ORDER BY 
+        T4.AREA_CODE,
+        YEAR;
+
+
+-- c. Find the total number of orders where receipt number is missing. 
+
+SELECT(
+	SELECT 
+		COUNT(*) FROM TAB2 T2 
+	WHERE RECIPNUM IS NULL) AS "TOTAL_MISSING_ORDER_RECIPNUM";
+);
+
+
+-- d. Find the total number of orders and average order value by payment method where
+order type is Gift
+
+SELECT 
+	T3.PAYMENTTYPE, T2.GIFT, COUNT(T2.ORDERNUM) AS TOTAL_ORDER,ROUND(AVG(T2.VALUE)::NUMERIC,2) AS AVERAGE_VALUE
+FROM TAB2 T2
+	JOIN TAB3 T3
+	ON T3.CUST_ID=T2.CUST_ID
+GROUP BY T3.PAYMENTTYPE,T2.GIFT
+ORDER BY T2.GIFT;
+
+
+-- e. Find the total number of orders and average order value for customers in the age range
+31-40 and with store distance less than 10 miles 
+
+CREATE OR REPLACE FUNCTION ORDER_BY_DISTANCE_AND_AGE(
+	DISTANCE INT,
+	MIN_AGE INT,
+	MAX_AGE INT
+)
+RETURNS TABLE(
+	AGE INT, TOTAL_ORDER BIGINT, AVERAGE_ORDER_VALUE NUMERIC
+)
+LANGUAGE PLPGSQL
+AS $$ 
+BEGIN 
+	RETURN QUERY 
+	SELECT T4.AGE, COUNT(T2.ORDERNUM), ROUND(AVG(T2.VALUE)::NUMERIC,2)
+	FROM 
+	TAB2 T2
+		JOIN TAB4 T4 ON T2.CUST_ID= T4.CUST_ID
+	WHERE T4.AGE BETWEEN MIN_AGE AND MAX_AGE AND T4.STOREDIST < DISTANCE
+	GROUP BY T4.AGE
+	ORDER BY T4.AGE;
+END;
+$$;
+
+-- Execute store procedure
+
+SELECT * FROM ORDER_BY_DISTANCE_AND_AGE(10,31,40);
+
